@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shelf Scan">
+<meta name="theme-color" content="#f3f4f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141a1e" media="(prefers-color-scheme: dark)">
+<title>Shelf Scan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: one-column phone tool, sticky header, live scanner window, bottom tab bar like a handheld scanner */
+:root {
+  --bg: #f3f4f1;
+  --surface: #ffffff;
+  --ink: #1d2a33;
+  --muted: #5f6d74;
+  --line: #d9ddd8;
+  --accent: #1f5f8b;
+  --accent-ink: #ffffff;
+  --tag: #ffd84d;
+  --tag-ink: #2a2300;
+  --ok: #2f7d4f;
+  --warn: #b5541c;
+  --v1: #2f6fa8; --v2: #b04a6a; --v3: #3f8a5c; --v4: #a8742a; --v5: #6a55a8;
+  /* scanner window is always dark, so these stay the same in both themes */
+  --cam-bg: #0b0f12;
+  --cam-text: #f3f6f4;
+  --scan-idle: rgba(255, 255, 255, .9);
+  --scan-seen: #ffc93d;
+  --scan-lock: #36d47c;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141a1e; --surface: #1d252a; --ink: #e8ece9; --muted: #9aa7ad; --line: #2f3a40;
+    --accent: #6fb3e3; --accent-ink: #0d1a22; --tag: #e8c33a; --tag-ink: #221c00;
+    --ok: #6cc18f; --warn: #ec9a62;
+    --v1: #6ea8dc; --v2: #e07f9e; --v3: #74c492; --v4: #d9a95c; --v5: #a493dd;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-top: env(safe-area-inset-top, 0px); -webkit-text-size-adjust: 100%; }
+[hidden] { display: none !important; }
+.wrap { max-width: 560px; margin: 0 auto; padding-inline: 16px; padding-block: 0 110px; }
+header.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--bg); padding-block: 12px 10px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+header.top > div:first-child { min-width: 0; }
+header.top h1 { margin: 0; font-size: 20px; font-weight: 900; letter-spacing: .01em; }
+.lang { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; flex: none; }
+.lang button { appearance: none; border: 0; background: var(--surface); color: var(--muted); font: inherit;
+  font-size: 12px; font-weight: 700; padding: 5px 9px; cursor: pointer; }
+.lang button + button { border-left: 1px solid var(--line); }
+.lang button[aria-pressed=true] { background: var(--ink); color: var(--bg); }
+.status { font-size: 12px; color: var(--muted); margin-top: 4px; }
+section { display: grid; gap: 14px; padding-block: 14px; }
+h2 { margin: 0; font-size: 17px; font-weight: 700; text-wrap: balance; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.btn { appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  font: inherit; font-weight: 700; padding: 12px 14px; border-radius: 8px; cursor: pointer; text-align: center; }
+.btn:focus-visible, input:focus-visible, select:focus-visible, .lang button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.danger { color: var(--warn); }
+.btn.small { padding: 7px 10px; font-size: 13px; }
+.btn[disabled] { opacity: .5; cursor: default; }
+label.file { position: relative; overflow: hidden; }
+label.file input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row > * { min-width: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+input[type=text], input[type=number], select {
+  font: inherit; font-size: 16px; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 12px; width: 100%; }
+.field { display: grid; gap: 4px; }
+.field > span:first-child { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.code { font-family: var(--font-mono); font-size: 20px; font-weight: 700; word-break: break-all; }
+.check { font-size: 12px; font-weight: 700; }
+.check.good { color: var(--ok); } .check.bad { color: var(--warn); }
+
+/* ---- live scanner ---- */
+.scanner { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 48vh; border-radius: 12px; overflow: hidden;
+  background: var(--cam-bg); color: var(--cam-text); isolation: isolate; }
+.scanner video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.scanner .box { position: absolute; left: 11%; right: 11%; top: 28%; bottom: 28%; border-radius: 10px;
+  border: 3px solid var(--scan-idle); box-shadow: 0 0 0 9999px rgba(0, 0, 0, .45);
+  transition: border-color .15s ease, background-color .15s ease; }
+.scanner .box::before, .scanner .box::after { content: ""; position: absolute; left: 8%; right: 8%; top: 50%; height: 2px;
+  background: var(--scan-idle); opacity: .55; }
+.scanner .box::after { display: none; }
+.scanner[data-state=seen] .box { border-color: var(--scan-seen); }
+.scanner[data-state=seen] .box::before { background: var(--scan-seen); opacity: .9; }
+.scanner[data-state=locked] .box { border-color: var(--scan-lock); background: rgba(54, 212, 124, .18); }
+.scanner[data-state=locked] .box::before { display: none; }
+.scanner .livemsg { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 12px 10px; text-align: center;
+  font-size: 13px; font-weight: 700; background: linear-gradient(transparent, rgba(0,0,0,.65)); }
+.scanner .lockcode { position: absolute; left: 0; right: 0; top: 10px; text-align: center; font-family: var(--font-mono);
+  font-weight: 700; font-size: 15px; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.scanner .cover { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px;
+  padding: 16px; text-align: center; background: var(--cam-bg); z-index: 2; }
+.scanner .cover p { margin: 0; font-size: 13px; max-width: 34ch; opacity: .85; }
+.scanner .cover .btn { background: var(--scan-lock); border-color: var(--scan-lock); color: #062312; font-size: 16px; padding: 14px 22px; }
+.scanner .cover .err { color: var(--scan-seen); font-weight: 700; }
+@media (prefers-reduced-motion: no-preference) {
+  .scanner[data-state=idle] .box::before { animation: sweep 1.6s ease-in-out infinite; }
+  @keyframes sweep { 0%, 100% { top: 22%; } 50% { top: 78%; } }
+  .flash { animation: fl .6s ease; } @keyframes fl { from { background: var(--tag); } }
+}
+
+.vchip { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px;
+  border: 2px solid var(--vc, var(--muted)); color: var(--vc, var(--muted)); border-radius: 6px; padding: 2px 8px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.vchip b { font-family: var(--font-mono); }
+.stepper { display: grid; grid-template-columns: 52px 1fr 52px; gap: 8px; align-items: center; }
+.stepper input { text-align: center; font-family: var(--font-mono); font-size: 20px; font-weight: 700; }
+.msg { font-size: 13px; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px dashed var(--line); }
+.msg.err { color: var(--warn); border-color: var(--warn); }
+.msg.ok { color: var(--ok); border-color: var(--ok); }
+.preview { max-height: 160px; border-radius: 8px; object-fit: contain; background: var(--bg); width: 100%; }
+.group { display: grid; gap: 0; }
+.ghead { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding-bottom: 10px; border-bottom: 2px solid var(--vc); }
+.item { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding-block: 10px; border-bottom: 1px solid var(--line); align-items: center; }
+.item:last-child { border-bottom: 0; }
+.item .name { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.item .sub { grid-column: 1; font-size: 12px; color: var(--muted); min-width: 0; }
+.item .qty { grid-row: 1 / span 2; grid-column: 2; font-family: var(--font-mono); font-weight: 700; font-size: 18px; text-align: right; }
+.item.clickable { cursor: pointer; }
+.empty { text-align: center; color: var(--muted); padding: 24px 12px; display: grid; gap: 6px; }
+.filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.filters .btn { white-space: nowrap; }
+.filters .btn[aria-pressed=true] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.vrow { display: grid; grid-template-columns: 84px 1fr; gap: 8px; align-items: center; }
+.vrow .sw { width: 100%; height: 6px; border-radius: 3px; background: var(--vc); grid-column: 1 / -1; }
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--surface);
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+nav.tabs .in { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+nav.tabs button { appearance: none; background: none; border: 0; font: inherit; color: var(--muted);
+  padding: 10px 4px 12px; font-size: 12px; font-weight: 700; display: grid; justify-items: center; gap: 2px; cursor: pointer; }
+nav.tabs button .ico { font-family: var(--font-mono); font-size: 15px; }
+nav.tabs button[aria-selected=true] { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
+.badge { background: var(--tag); color: var(--tag-ink); border-radius: 999px; font-size: 10px; padding: 0 6px; font-family: var(--font-mono); }
+.tag-label { background: var(--tag); color: var(--tag-ink); border-radius: 6px; padding: 10px 12px; display: grid; gap: 2px; }
+.tag-label .t { font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+pre.copybox { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px; background: var(--bg); border-radius: 8px; padding: 10px; margin: 0; }
+details.manual summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--muted); }
+details.manual[open] summary { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Shelf Scan</h1>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="lang" role="group" aria-label="Language / 言語">
+      <button type="button" data-lang="ja" aria-pressed="true" lang="ja">日本語</button>
+      <button type="button" data-lang="en" aria-pressed="false" lang="en">EN</button>
+    </div>
+  </header>
+
+  <!-- SCAN -->
+  <section id="tab-scan">
+    <div class="scanner" id="scanner" data-state="off">
+      <video id="video" playsinline muted autoplay></video>
+      <div class="box" aria-hidden="true"></div>
+      <div class="lockcode" id="lockCode"></div>
+      <div class="livemsg" id="liveMsg" aria-live="polite"></div>
+      <div class="cover" id="cover">
+        <button class="btn" id="startCam" data-i18n="startCam"></button>
+        <p data-i18n="startHint"></p>
+        <p class="err" id="camErr" hidden></p>
+      </div>
+    </div>
+    <div class="grid2">
+      <button class="btn" id="stopCam" data-i18n="stopCam" disabled></button>
+      <label class="btn file" for="photo"><span data-i18n="usePhoto"></span>
+        <input id="photo" type="file" accept="image/*">
+      </label>
+    </div>
+    <div id="scanOut"></div>
+    <details class="manual card">
+      <summary data-i18n="manualLabel"></summary>
+      <div class="row" style="flex-wrap:nowrap">
+        <input id="manual" type="text" inputmode="numeric" pattern="[0-9]*" data-i18n-ph="manualPh" class="mono" autocomplete="off">
+        <button class="btn" id="manualGo" style="flex:none" data-i18n="manualGo"></button>
+      </div>
+    </details>
+  </section>
+
+  <!-- ORDER -->
+  <section id="tab-order" hidden>
+    <div class="row" style="justify-content:space-between">
+      <h2 data-i18n="orderTitle"></h2>
+      <button class="btn small danger" id="clearOrders" data-i18n="clearAll"></button>
+    </div>
+    <div id="clearConfirm"></div>
+    <button class="btn primary" id="csvOrder" data-i18n="downloadCsv"></button>
+    <div id="orderOut"></div>
+  </section>
+
+  <!-- PRODUCTS -->
+  <section id="tab-items" hidden>
+    <h2 data-i18n="itemsTitle"></h2>
+    <div class="filters" id="filters"></div>
+    <div class="card" id="itemsOut"></div>
+  </section>
+
+  <!-- VENDORS + DATA -->
+  <section id="tab-vendors" hidden>
+    <h2 data-i18n="vendorsTitle"></h2>
+    <p class="hint" data-i18n="vendorsHint"></p>
+    <div id="vendorsOut" style="display:grid;gap:10px"></div>
+    <div class="card">
+      <div class="vrow">
+        <input id="newVnum" type="text" inputmode="numeric" class="mono" data-i18n-ph="vnumPh">
+        <input id="newVname" type="text" data-i18n-ph="vnamePh">
+      </div>
+      <button class="btn" id="addVendor" data-i18n="addVendor"></button>
+      <div id="vendorMsg"></div>
+    </div>
+    <h2 data-i18n="dataTitle"></h2>
+    <div class="card">
+      <p class="hint" data-i18n="dataHint"></p>
+      <button class="btn primary" id="csvData" data-i18n="downloadCsv"></button>
+      <div class="grid2">
+        <button class="btn" id="backup" data-i18n="backup"></button>
+        <label class="btn file" for="restoreFile"><span data-i18n="restore"></span>
+          <input id="restoreFile" type="file" accept="application/json,.json">
+        </label>
+      </div>
+      <div id="dataMsg"></div>
+    </div>
+  </section>
+</div>
+
+<nav class="tabs" role="tablist">
+  <div class="in">
+    <button role="tab" data-tab="scan" aria-selected="true"><span class="ico">|||</span><span data-i18n="tabScan"></span></button>
+    <button role="tab" data-tab="order" aria-selected="false"><span class="ico">#</span><span><span data-i18n="tabOrder"></span> <span class="badge" id="orderBadge">0</span></span></button>
+    <button role="tab" data-tab="items" aria-selected="false"><span class="ico">[ ]</span><span data-i18n="tabItems"></span></button>
+    <button role="tab" data-tab="vendors" aria-selected="false"><span class="ico">No.</span><span data-i18n="tabVendors"></span></button>
+  </div>
+</nav>
+
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const VCOL = ["--v1", "--v2", "--v3", "--v4", "--v5"];
+
+  // =====================================================================
+  // Language
+  // =====================================================================
+  const STR = {
+    ja: {
+      statusLocal: (n) => `保存先: この端末のブラウザ ・ 商品 ${n}件`,
+      startCam: "カメラを起動", startHint: "バーコードを枠に合わせると、自動で読み取ります。",
+      stopCam: "カメラを止める", usePhoto: "写真で読む",
+      liveIdle: "枠の中にバーコードを合わせてください", liveSeen: "そのまま…", liveLocked: "読み取りました",
+      livePaused: "画面をタップすると次をスキャンします", scanNext: "次をスキャン",
+      camDenied: "カメラが使えませんでした。他のアプリの中（ファイルのプレビューなど）で開いている場合は、GitHub PagesのリンクをSafariで開いてください。Safariで開いている場合は、「設定 > アプリ > Safari > カメラ」で許可してください。",
+      camInsecure: "カメラは https:// のページでしか使えません。GitHub Pagesのリンクから開いてください。",
+      camNone: "カメラが見つかりませんでした。写真か手入力を使ってください。",
+      camError: "カメラを起動できませんでした。写真か手入力を使ってください。",
+      manualLabel: "番号を手入力", manualPh: "例: 4901234567894", manualGo: "読む",
+      orderTitle: "発注リスト（ベンダー別）", clearAll: "全部クリア",
+      itemsTitle: "登録した商品",
+      vendorsTitle: "ベンダー（会社）設定",
+      vendorsHint: "最初は架空の会社が入っています。番号と名前を自由に変えられます。",
+      vnumPh: "番号", vnamePh: "会社名", addVendor: "ベンダーを追加",
+      vendorBad: "番号（数字6桁まで）と会社名を入れてください。", vendorDup: (n) => `ベンダー ${n} はもうあります。`,
+      tabScan: "スキャン", tabOrder: "発注", tabItems: "商品", tabVendors: "設定",
+      libMissing: "読み取りライブラリを読み込めませんでした。ネット接続を確認するか、手入力を使ってください。",
+      reading: "読み取り中…", photoAlt: "撮った写真",
+      notFound: "バーコードが見つかりませんでした。もっと近づいて、ピントを合わせてもう一度撮るか、手入力を使ってください。",
+      other: "その他", checkOk: "チェックディジットOK", checkBad: "チェックディジット不一致（読み間違いかも）",
+      scannedNum: "読み取った番号", registered: "登録済み",
+      orderQty: "発注数", saveQty: "保存して次へ",
+      savedQty: (v, q) => q > 0 ? `ベンダー ${v} の発注リストに ${q} 個で入れました。` : "発注リストから外しました。",
+      newItem: "初めての商品です。1回だけ登録すれば、次からはスキャンするだけでベンダーが出ます。",
+      pname: "商品名", pnamePh: "例: ハンドクリーム 50g",
+      vendorNum: "ベンダー番号", chooseVendor: "ベンダーを選ぶ",
+      qtyNew: "発注数（今は不要なら0）", register: "登録して次へ",
+      needNameVendor: "商品名とベンダーを入れてください。",
+      registeredMsg: (v) => `登録しました。次からはスキャンするだけでベンダー ${v} が出ます。`,
+      unset: "未設定",
+      emptyOrderT: "まだ発注する商品はありません",
+      emptyOrderS: "スキャンして発注数を入れると、ここにベンダーごとに分かれて並びます。",
+      groupSummary: (n, total) => `${n}品目 / 計${total}個`,
+      copyVendor: "この会社の注文をコピー",
+      copyHeader: (name, n) => `発注 ${name}（ベンダー ${n}）`,
+      copied: "コピーしました。メモやメールに貼り付けられます。",
+      copyFallback: "長押しで選択してコピーしてください。",
+      clearMsg: "発注数をすべて0に戻します。商品の登録は消えません。",
+      clearYes: "0に戻す", cancel: "やめる",
+      all: "すべて",
+      emptyItemsT: "まだ商品がありません",
+      emptyItemsS: "家にあるものを何個かスキャンして登録してみてください。",
+      count: (n) => `${n}件`,
+      open: "開く", del: "削除", reallyDel: "本当に削除",
+      productsN: (n) => `商品 ${n}件`, saveName: "名前を保存", itemsLeft: "商品が残っています",
+      noVendorsT: "ベンダーがありません", noVendorsS: "下から追加してください。",
+      numAria: "番号", nameAria: "会社名", sample: "（例）",
+      dataTitle: "データ",
+      dataHint: "データはこの端末のブラウザの中だけに保存されます。機種変更やSafariのデータ削除の前に、バックアップを保存してください。",
+      downloadCsv: "スプレッドシート用CSVをダウンロード",
+      backup: "バックアップを保存", restore: "バックアップから復元",
+      restoreConfirm: (p, v) => `この端末の商品とベンダーを、バックアップ（商品 ${p}件・ベンダー ${v}社）で置き換えます。`,
+      restoreYes: "置き換える", restored: "復元しました。",
+      restoreBad: "このファイルは読み込めませんでした。Shelf Scanのバックアップ（.json）を選んでください。",
+      csvHead: ["ベンダー番号", "ベンダー名", "バーコード", "商品名", "発注数", "注文"],
+      csvOrder: "注文する", csvNoOrder: "注文しない",
+      fileSaved: "ファイルを保存しました。iPhoneでは「ファイル」アプリの「ダウンロード」に入ります。"
+    },
+    en: {
+      statusLocal: (n) => `Saved in this browser · ${n} ${n === 1 ? "product" : "products"}`,
+      startCam: "Start camera", startHint: "Line up a barcode inside the box and it scans automatically.",
+      stopCam: "Stop camera", usePhoto: "Use a photo",
+      liveIdle: "Line up the barcode inside the box", liveSeen: "Hold still…", liveLocked: "Got it",
+      livePaused: "Tap the camera to scan the next one", scanNext: "Scan next",
+      camDenied: "The camera was blocked. If this is open inside another app (like a file preview), open the GitHub Pages link in Safari instead. If you're already in Safari, allow it in Settings > Apps > Safari > Camera.",
+      camInsecure: "The camera only works on an https:// page. Open the app from its GitHub Pages link.",
+      camNone: "No camera found. Use a photo or type the number instead.",
+      camError: "The camera couldn't start. Use a photo or type the number instead.",
+      manualLabel: "Type a number instead", manualPh: "e.g. 4901234567894", manualGo: "Look up",
+      orderTitle: "Order list by vendor", clearAll: "Clear all",
+      itemsTitle: "Saved products",
+      vendorsTitle: "Vendors",
+      vendorsHint: "It starts with made-up companies. Change the numbers and names any way you like.",
+      vnumPh: "No.", vnamePh: "Company name", addVendor: "Add vendor",
+      vendorBad: "Enter a number (up to 6 digits) and a company name.", vendorDup: (n) => `Vendor ${n} already exists.`,
+      tabScan: "Scan", tabOrder: "Order", tabItems: "Products", tabVendors: "Settings",
+      libMissing: "The barcode reader didn't load. Check your connection, or type the number instead.",
+      reading: "Reading…", photoAlt: "Your photo",
+      notFound: "No barcode found. Move closer, focus, and try again, or type the number instead.",
+      other: "Other", checkOk: "check digit OK", checkBad: "check digit mismatch (possible misread)",
+      scannedNum: "Scanned number", registered: "Saved product",
+      orderQty: "Order quantity", saveQty: "Save and scan next",
+      savedQty: (v, q) => q > 0 ? `Added ×${q} to vendor ${v}'s order list.` : "Removed from the order list.",
+      newItem: "New product. Register it once, and next time a scan will show its vendor right away.",
+      pname: "Product name", pnamePh: "e.g. Hand cream 50 g",
+      vendorNum: "Vendor number", chooseVendor: "Choose a vendor",
+      qtyNew: "Order quantity (0 if none needed)", register: "Register and scan next",
+      needNameVendor: "Enter a product name and choose a vendor.",
+      registeredMsg: (v) => `Saved. Next time, scanning shows vendor ${v} right away.`,
+      unset: "Not set",
+      emptyOrderT: "Nothing to order yet",
+      emptyOrderS: "Scan items and enter a quantity. They'll show up here, grouped by vendor.",
+      groupSummary: (n, total) => `${n} ${n === 1 ? "item" : "items"} / ${total} ${total === 1 ? "unit" : "units"}`,
+      copyVendor: "Copy this vendor's order",
+      copyHeader: (name, n) => `Order: ${name} (vendor ${n})`,
+      copied: "Copied. Paste it into Notes or an email.",
+      copyFallback: "Press and hold to select the text, then copy.",
+      clearMsg: "This resets every order quantity to 0. Saved products stay.",
+      clearYes: "Reset to 0", cancel: "Cancel",
+      all: "All",
+      emptyItemsT: "No products yet",
+      emptyItemsS: "Scan a few things around the house to get started.",
+      count: (n) => `${n} ${n === 1 ? "product" : "products"}`,
+      open: "Open", del: "Delete", reallyDel: "Confirm delete",
+      productsN: (n) => `${n} ${n === 1 ? "product" : "products"}`, saveName: "Save name", itemsLeft: "Products still use this vendor",
+      noVendorsT: "No vendors yet", noVendorsS: "Add one below.",
+      numAria: "Number", nameAria: "Company name", sample: " (sample)",
+      dataTitle: "Your data",
+      dataHint: "Your data is stored only in this browser on this device. Save a backup before switching phones or clearing Safari data.",
+      downloadCsv: "Download CSV for a spreadsheet",
+      backup: "Save backup", restore: "Restore backup",
+      restoreConfirm: (p, v) => `This replaces the products and vendors on this device with the backup (${p} products, ${v} vendors).`,
+      restoreYes: "Replace", restored: "Restored.",
+      restoreBad: "That file couldn't be read. Choose a Shelf Scan backup (.json).",
+      csvHead: ["Vendor No.", "Vendor", "Barcode", "Product", "Order qty", "Status"],
+      csvOrder: "Order", csvNoOrder: "No order",
+      fileSaved: "File saved. On iPhone it goes to Downloads in the Files app."
+    }
+  };
+  const LANG_KEY = "shelfscan-lang";
+  let lang = "ja";
+  try { const s = localStorage.getItem(LANG_KEY); if (s === "en" || s === "ja") lang = s; } catch (e) {}
+  const t = (key, ...args) => { const v = STR[lang][key] ?? STR.ja[key]; return typeof v === "function" ? v(...args) : v; };
+  const vname = (name) => { const s = String(name ?? ""); return s.endsWith("（例）") ? s.slice(0, -3) + t("sample") : s; };
+
+  function applyStatic() {
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
+    document.querySelectorAll("[data-i18n-ph]").forEach((el) => (el.placeholder = t(el.dataset.i18nPh)));
+    document.querySelectorAll(".lang button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+    $("status").textContent = t("statusLocal", Object.keys(products).length);
+    setLive(scanState);
+    if (camErrKey) $("camErr").textContent = t(camErrKey);
+  }
+  function setLang(next) {
+    if (next === lang) return;
+    const keep = {};
+    ["pname", "pvendor", "qty"].forEach((id) => { const el = $(id); if (el) keep[id] = el.value; });
+    lang = next;
+    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+    applyStatic();
+    renderScan(false);
+    Object.entries(keep).forEach(([id, v]) => { const el = $(id); if (el) el.value = v; });
+    renderOrders(); renderItems(); renderVendors();
+  }
+  document.querySelectorAll(".lang button").forEach((b) => (b.onclick = () => setLang(b.dataset.lang)));
+
+  // =====================================================================
+  // Storage (this browser only)
+  // =====================================================================
+  const DATA_KEY = "shelfscan-data-v1";
+  const DEFAULT_VENDORS = [
+    { num: "54", name: "Aoba Cosmetics（例）", color: 0 },
+    { num: "102", name: "Sakuraya Beauty（例）", color: 1 },
+    { num: "77", name: "Northwind Care（例）", color: 2 },
+    { num: "131", name: "Hikari Skin Lab（例）", color: 3 },
+    { num: "205", name: "Pacific Home Goods（例）", color: 4 }
+  ];
+  // products: barcode -> {barcode, name, vendor, qty, updatedAt}   (a hash map: O(1) lookup per scan)
+  // vendors:  vendorNumber -> {num, name, color}
+  let products = {};
+  let vendors = {};
+  function load() {
+    try {
+      const raw = localStorage.getItem(DATA_KEY);
+      if (raw) { const d = JSON.parse(raw); products = d.products || {}; vendors = d.vendors || {}; }
+    } catch (e) {}
+    if (!Object.keys(vendors).length) DEFAULT_VENDORS.forEach((v) => (vendors[v.num] = { ...v }));
+  }
+  function persist() {
+    try { localStorage.setItem(DATA_KEY, JSON.stringify({ products, vendors })); } catch (e) {}
+    $("status").textContent = t("statusLocal", Object.keys(products).length);
+  }
+  function setProduct(p) { products = { ...products, [p.barcode]: p }; persist(); renderAll(); }
+  function delProduct(id) { const n = { ...products }; delete n[id]; products = n; persist(); renderAll(); }
+  function setVendor(v) { vendors = { ...vendors, [v.num]: v }; persist(); renderAll(); }
+  function delVendor(id) { const n = { ...vendors }; delete n[id]; vendors = n; persist(); renderAll(); }
+
+  // =====================================================================
+  // Barcode helpers
+  // =====================================================================
+  // GTIN check digit: from the right (excluding the check digit), weights alternate 3,1,3,1...
+  function checkDigitOK(code) {
+    if (!/^\d+$/.test(code) || ![8, 12, 13, 14].includes(code.length)) return null;
+    const digits = code.split("").map(Number);
+    const check = digits.pop();
+    let sum = 0;
+    digits.reverse().forEach((d, i) => (sum += d * (i % 2 === 0 ? 3 : 1)));
+    return (10 - (sum % 10)) % 10 === check;
+  }
+  function typeName(code) {
+    return { 8: "EAN-8", 12: "UPC-A", 13: "EAN-13 / JAN", 14: "GTIN-14" }[code.length] || t("other");
+  }
+  let reader = null;
+  function getReader() {
+    if (reader) return reader;
+    const Z = window.ZXing;
+    if (!Z) return null;
+    const hints = new Map();
+    hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A,
+      Z.BarcodeFormat.UPC_E, Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.ITF]);
+    hints.set(Z.DecodeHintType.TRY_HARDER, true);
+    reader = new Z.MultiFormatReader();
+    reader.setHints(hints);
+    return reader;
+  }
+  // Try to read one barcode from a canvas. Returns the text or null.
+  function decodeCanvas(c) {
+    const Z = window.ZXing, r = getReader();
+    if (!r) return null;
+    const src = new Z.HTMLCanvasElementLuminanceSource(c);
+    for (const Bin of [Z.HybridBinarizer, Z.GlobalHistogramBinarizer]) {
+      try { return r.decode(new Z.BinaryBitmap(new Bin(src))).getText(); } catch (e) {} finally { r.reset(); }
+    }
+    return null;
+  }
+
+  // =====================================================================
+  // Live camera scanner
+  // =====================================================================
+  const video = $("video"), scanner = $("scanner");
+  const frame = document.createElement("canvas");
+  const fctx = frame.getContext("2d", { willReadFrequently: true });
+  let stream = null;
+  let scanState = "off";      // off | idle | seen | locked
+  let camErrKey = null;
+  let candidate = null, hits = 0, lastHitAt = 0;
+  let cooldown = { code: null, until: 0 };
+  let loopTimer = null;
+  let audio = null;
+  let wantCamera = false;     // user turned the camera on (used to resume after switching tabs)
+
+  function setLive(state) {
+    scanState = state;
+    scanner.dataset.state = state;
+    const key = { idle: "liveIdle", seen: "liveSeen", locked: "livePaused" }[state];
+    $("liveMsg").textContent = key ? t(key) : "";
+    if (state !== "locked") $("lockCode").textContent = "";
+  }
+
+  async function startCamera() {
+    camErrKey = null; $("camErr").hidden = true;
+    if (!window.isSecureContext) return showCamError("camInsecure");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return showCamError("camError");
+    if (!getReader()) return showCamError("libMissing");
+    try {
+      if (!audio) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) audio = new AC(); }
+      if (audio && audio.state === "suspended") audio.resume().catch(() => {});
+    } catch (e) {}
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+    } catch (e) {
+      const n = e && e.name;
+      return showCamError(n === "NotAllowedError" || n === "SecurityError" ? "camDenied" : n === "NotFoundError" || n === "OverconstrainedError" ? "camNone" : "camError");
+    }
+    try {
+      const track = stream.getVideoTracks()[0];
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      if (caps.focusMode && caps.focusMode.includes("continuous")) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+    } catch (e) {}
+    video.srcObject = stream;
+    try { await video.play(); } catch (e) {}
+    wantCamera = true;
+    $("cover").hidden = true;
+    $("stopCam").disabled = false;
+    resumeScanning();
+  }
+  function showCamError(key) {
+    camErrKey = key;
+    $("camErr").textContent = t(key);
+    $("camErr").hidden = false;
+    $("cover").hidden = false;
+    setLive("off");
+  }
+  function stopCamera(keepWanted) {
+    clearTimeout(loopTimer); loopTimer = null;
+    if (stream) stream.getTracks().forEach((tr) => tr.stop());
+    stream = null; video.srcObject = null;
+    if (!keepWanted) wantCamera = false;
+    $("cover").hidden = false;
+    $("stopCam").disabled = true;
+    setLive("off");
+  }
+  function resumeScanning() {
+    if (!stream) return;
+    candidate = null; hits = 0;
+    setLive("idle");
+    clearTimeout(loopTimer);
+    loopTimer = setTimeout(tick, 120);
+  }
+
+  // Crop the part of the video that sits under the on-screen box (object-fit: cover math).
+  function grabBox() {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return false;
+    const W = scanner.clientWidth, H = scanner.clientHeight;
+    const scale = Math.max(W / vw, H / vh);
+    const offX = (W - vw * scale) / 2, offY = (H - vh * scale) / 2;
+    // box is inset 11% left/right, 28% top/bottom; read a little beyond it for tolerance
+    const bx = W * 0.06, by = H * 0.22, bw = W * 0.88, bh = H * 0.56;
+    let sx = (bx - offX) / scale, sy = (by - offY) / scale, sw = bw / scale, sh = bh / scale;
+    sx = Math.max(0, sx); sy = Math.max(0, sy); sw = Math.min(vw - sx, sw); sh = Math.min(vh - sy, sh);
+    const outW = Math.min(900, Math.round(sw));
+    const k = outW / sw;
+    frame.width = outW; frame.height = Math.max(1, Math.round(sh * k));
+    fctx.drawImage(video, sx, sy, sw, sh, 0, 0, frame.width, frame.height);
+    return true;
+  }
+
+  function tick() {
+    loopTimer = null;
+    if (!stream || scanState === "locked" || scanState === "off") return;
+    if (video.readyState >= 2 && grabBox()) {
+      const text = decodeCanvas(frame);
+      const now = performance.now();
+      if (text && !(text === cooldown.code && now < cooldown.until) && checkDigitOK(text) !== false) {
+        // Require the same code twice in a row before accepting, to avoid misreads.
+        if (text === candidate && now - lastHitAt < 1200) hits++; else { candidate = text; hits = 1; }
+        lastHitAt = now;
+        if (hits >= 2) return lock(text);
+        setLive("seen");
+      } else if (scanState === "seen" && now - lastHitAt > 700) {
+        candidate = null; hits = 0; setLive("idle");
+      }
+    }
+    loopTimer = setTimeout(tick, 110);
+  }
+
+  function beep() {
+    try { if (navigator.vibrate) navigator.vibrate(60); } catch (e) {}
+    try {
+      if (!audio) return;
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = "sine"; o.frequency.value = 1760;
+      g.gain.setValueAtTime(0.0001, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.25, audio.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.12);
+      o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.13);
+    } catch (e) {}
+  }
+
+  function lock(code) {
+    setLive("locked");
+    $("lockCode").textContent = code;
+    beep();
+    cooldown = { code, until: 0 };
+    showCode(code);
+    const out = $("scanOut");
+    if (out.firstElementChild) out.firstElementChild.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  // after saving, wait a moment, then go back to scanning (ignore the same code for 2.5 s)
+  function nextScan(skipCode) {
+    if (!stream) return;
+    cooldown = { code: skipCode ?? current, until: performance.now() + 2500 };
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    resumeScanning();
+  }
+
+  scanner.addEventListener("click", (e) => {
+    if (scanState === "locked" && !e.target.closest(".cover")) { $("scanOut").innerHTML = ""; nextScan(); current = null; }
+  });
+  $("startCam").onclick = startCamera;
+  $("stopCam").onclick = () => stopCamera(false);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (stream) stopCamera(true); }
+    else if (wantCamera && !$("tab-scan").hidden) startCamera();
+  });
+
+  // Photo fallback
+  async function handlePhoto(file) {
+    if (!file) return;
+    if (!getReader()) { $("scanOut").innerHTML = `<div class="card"><div class="msg err">${esc(t("libMissing"))}</div></div>`; return; }
+    $("scanOut").innerHTML = `<div class="card"><div class="msg">${esc(t("reading"))}</div></div>`;
+    const url = URL.createObjectURL(file);
+    let text = null;
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      for (const maxW of [1600, 1000, 2400, 700]) {
+        const s = Math.min(1, maxW / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        text = decodeCanvas(c);
+        if (text) break;
+      }
+    } catch (e) {}
+    if (!text) {
+      $("scanOut").innerHTML = `<div class="card"><img class="preview" src="${url}" alt="${esc(t("photoAlt"))}"><div class="msg err">${esc(t("notFound"))}</div></div>`;
+      return;
+    }
+    URL.revokeObjectURL(url);
+    showCode(text.trim());
+  }
+
+  // =====================================================================
+  // Scan result card
+  // =====================================================================
+  let current = null;
+  function showCode(code) { current = code; $("manual").value = ""; renderScan(true); }
+  function vendorChip(num) {
+    const v = vendors[num];
+    const col = v ? `var(${VCOL[(v.color ?? 0) % 5]})` : "var(--muted)";
+    return `<span class="vchip" style="--vc:${col}"><b>${esc(num)}</b>${v ? esc(vname(v.name)) : esc(t("unset"))}</span>`;
+  }
+  function vendorOptions(sel) {
+    const list = Object.values(vendors).sort((a, b) => Number(a.num) - Number(b.num));
+    return `<option value="">${esc(t("chooseVendor"))}</option>` + list.map((v) => `<option value="${esc(v.num)}" ${v.num === sel ? "selected" : ""}>${esc(v.num)} — ${esc(vname(v.name))}</option>`).join("");
+  }
+  function stepperHtml(val) {
+    return `<div class="stepper"><button class="btn" data-step="-1" aria-label="-1">−</button>
+      <input id="qty" type="number" min="0" inputmode="numeric" value="${val}">
+      <button class="btn" data-step="1" aria-label="+1">＋</button></div>`;
+  }
+  function afterSave(msgHtml) {
+    if (stream) { const done = current; $("scanOut").innerHTML = `<div class="card">${msgHtml}</div>`; current = null; setTimeout(() => nextScan(done), 500); }
+    else { renderScan(false); $("scanMsg").innerHTML = msgHtml; }
+  }
+  function renderScan(flash) {
+    const out = $("scanOut");
+    if (!current) return;
+    const p = products[current];
+    const ok = checkDigitOK(current);
+    const checkHtml = ok === null ? `<span class="check">${esc(typeName(current))}</span>`
+      : ok ? `<span class="check good">${esc(typeName(current))} ・ ${esc(t("checkOk"))}</span>`
+           : `<span class="check bad">${esc(typeName(current))} ・ ${esc(t("checkBad"))}</span>`;
+    const head = `<div class="field"><span>${esc(t("scannedNum"))}</span><div class="code">${esc(current)}</div>${checkHtml}</div>`;
+    const nextBtn = stream ? `<button class="btn" id="skipNext">${esc(t("scanNext"))}</button>` : "";
+    if (p) {
+      out.innerHTML = `<div class="card ${flash ? "flash" : ""}">${head}
+        <div class="tag-label"><span class="t">${esc(t("registered"))}</span><strong style="font-size:17px">${esc(p.name)}</strong></div>
+        <div>${vendorChip(p.vendor)}</div>
+        <div class="field"><span>${esc(t("orderQty"))}</span>${stepperHtml(p.qty || 0)}</div>
+        <div class="grid2" style="${stream ? "" : "grid-template-columns:1fr"}"><button class="btn primary" id="saveQty">${esc(t("saveQty"))}</button>${nextBtn}</div>
+        <div id="scanMsg"></div></div>`;
+      $("saveQty").onclick = () => {
+        const q = Math.max(0, parseInt($("qty").value, 10) || 0);
+        setProduct({ ...p, qty: q, updatedAt: Date.now() });
+        afterSave(`<div class="msg ok">${esc(t("savedQty", p.vendor, q))}</div>`);
+      };
+    } else {
+      out.innerHTML = `<div class="card ${flash ? "flash" : ""}">${head}
+        <div class="msg">${esc(t("newItem"))}</div>
+        <label class="field" for="pname"><span>${esc(t("pname"))}</span><input id="pname" type="text" placeholder="${esc(t("pnamePh"))}"></label>
+        <label class="field" for="pvendor"><span>${esc(t("vendorNum"))}</span><select id="pvendor">${vendorOptions("")}</select></label>
+        <div class="field"><span>${esc(t("qtyNew"))}</span>${stepperHtml(0)}</div>
+        <div class="grid2" style="${stream ? "" : "grid-template-columns:1fr"}"><button class="btn primary" id="register">${esc(t("register"))}</button>${nextBtn}</div>
+        <div id="scanMsg"></div></div>`;
+      $("register").onclick = () => {
+        const name = $("pname").value.trim(), vendor = $("pvendor").value;
+        if (!name || !vendor) { $("scanMsg").innerHTML = `<div class="msg err">${esc(t("needNameVendor"))}</div>`; return; }
+        const q = Math.max(0, parseInt($("qty").value, 10) || 0);
+        setProduct({ barcode: current, name, vendor, qty: q, updatedAt: Date.now() });
+        afterSave(`<div class="msg ok">${esc(t("registeredMsg", vendor))}</div>`);
+      };
+    }
+    if ($("skipNext")) $("skipNext").onclick = () => { out.innerHTML = ""; nextScan(); current = null; };
+    out.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
+      const i = $("qty"); i.value = Math.max(0, (parseInt(i.value, 10) || 0) + Number(b.dataset.step));
+    }));
+  }
+
+  // =====================================================================
+  // Order list grouped by vendor
+  // =====================================================================
+  const byVendorThenName = (a, b) => Number(a.vendor) - Number(b.vendor) || String(a.vendor).localeCompare(String(b.vendor)) || a.name.localeCompare(b.name, lang);
+  function renderOrders() {
+    const onList = Object.values(products).filter((p) => p.qty > 0);
+    $("orderBadge").textContent = onList.length;
+    const groups = {};
+    onList.forEach((p) => (groups[p.vendor] = groups[p.vendor] || []).push(p));
+    const nums = Object.keys(groups).sort((a, b) => Number(a) - Number(b));
+    if (!nums.length) {
+      $("orderOut").innerHTML = `<div class="card empty"><strong>${esc(t("emptyOrderT"))}</strong><span>${esc(t("emptyOrderS"))}</span></div>`;
+      return;
+    }
+    $("orderOut").innerHTML = `<div style="display:grid;gap:14px">` + nums.map((n) => {
+      const v = vendors[n]; const col = v ? `var(${VCOL[(v.color ?? 0) % 5]})` : "var(--muted)";
+      const items = groups[n].sort((a, b) => a.name.localeCompare(b.name, lang));
+      const total = items.reduce((s, p) => s + p.qty, 0);
+      return `<div class="card group" style="--vc:${col}">
+        <div class="ghead">${vendorChip(n)}<span class="mono" style="font-size:13px">${esc(t("groupSummary", items.length, total))}</span></div>
+        ${items.map((p) => `<div class="item clickable" data-open="${esc(p.barcode)}"><span class="name">${esc(p.name)}</span><span class="sub mono">${esc(p.barcode)}</span><span class="qty">×${p.qty}</span></div>`).join("")}
+        <div class="row"><button class="btn small" data-copy="${esc(n)}">${esc(t("copyVendor"))}</button></div>
+        <div data-copyout="${esc(n)}"></div></div>`;
+    }).join("") + `</div>`;
+    $("orderOut").querySelectorAll("[data-open]").forEach((el) => (el.onclick = () => { current = el.dataset.open; switchTab("scan"); renderScan(false); }));
+    $("orderOut").querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => {
+      const n = b.dataset.copy; const v = vendors[n];
+      const text = t("copyHeader", v ? vname(v.name) : "", n) + "\n" + groups[n].map((p) => `${p.barcode}  ${p.name}  ×${p.qty}`).join("\n");
+      const box = $("orderOut").querySelector(`[data-copyout="${CSS.escape(n)}"]`);
+      try { await navigator.clipboard.writeText(text); box.innerHTML = `<div class="msg ok">${esc(t("copied"))}</div>`; }
+      catch (e) { box.innerHTML = `<pre class="copybox" tabindex="0">${esc(text)}</pre><p class="hint">${esc(t("copyFallback"))}</p>`; }
+    }));
+  }
+  $("clearOrders").onclick = () => {
+    $("clearConfirm").innerHTML = `<div class="card"><div class="msg">${esc(t("clearMsg"))}</div>
+      <div class="row"><button class="btn danger" id="clearYes">${esc(t("clearYes"))}</button><button class="btn" id="clearNo">${esc(t("cancel"))}</button></div></div>`;
+    $("clearNo").onclick = () => ($("clearConfirm").innerHTML = "");
+    $("clearYes").onclick = () => {
+      $("clearConfirm").innerHTML = "";
+      const next = {};
+      Object.values(products).forEach((p) => (next[p.barcode] = p.qty > 0 ? { ...p, qty: 0, updatedAt: Date.now() } : p));
+      products = next; persist(); renderAll();
+    };
+  };
+
+  // =====================================================================
+  // CSV + backup
+  // =====================================================================
+  function saveFile(name, text, type) {
+    const blob = new Blob([text], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  function csvCell(v) { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+  function buildCSV() {
+    const rows = [t("csvHead")];
+    Object.values(products).sort(byVendorThenName).forEach((p) => {
+      const v = vendors[p.vendor];
+      // ="..." keeps long barcodes from turning into 4.90123E+12 in Excel / Sheets
+      rows.push([p.vendor, v ? vname(v.name) : t("unset"), `="${p.barcode}"`, p.name, p.qty || 0, p.qty > 0 ? t("csvOrder") : t("csvNoOrder")]);
+    });
+    return "﻿" + rows.map((r, i) => r.map((c, j) => (i > 0 && j === 2 ? c : csvCell(c))).join(",")).join("\r\n");
+  }
+  function downloadCSV(msgEl) {
+    saveFile(`shelf-scan-${today()}.csv`, buildCSV(), "text/csv;charset=utf-8");
+    if (msgEl) msgEl.innerHTML = `<div class="msg ok">${esc(t("fileSaved"))}</div>`;
+  }
+  $("csvOrder").onclick = () => downloadCSV($("clearConfirm"));
+  $("csvData").onclick = () => downloadCSV($("dataMsg"));
+  $("backup").onclick = () => {
+    saveFile(`shelf-scan-backup-${today()}.json`, JSON.stringify({ app: "shelf-scan", version: 1, exportedAt: new Date().toISOString(), vendors, products }, null, 2), "application/json");
+    $("dataMsg").innerHTML = `<div class="msg ok">${esc(t("fileSaved"))}</div>`;
+  };
+  $("restoreFile").onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    let d = null;
+    try { d = JSON.parse(await f.text()); } catch (err) {}
+    if (!d || d.app !== "shelf-scan" || typeof d.products !== "object" || typeof d.vendors !== "object") {
+      $("dataMsg").innerHTML = `<div class="msg err">${esc(t("restoreBad"))}</div>`; return;
+    }
+    $("dataMsg").innerHTML = `<div class="msg">${esc(t("restoreConfirm", Object.keys(d.products).length, Object.keys(d.vendors).length))}</div>
+      <div class="row"><button class="btn danger" id="restoreYes">${esc(t("restoreYes"))}</button><button class="btn" id="restoreNo">${esc(t("cancel"))}</button></div>`;
+    $("restoreNo").onclick = () => ($("dataMsg").innerHTML = "");
+    $("restoreYes").onclick = () => {
+      products = d.products; vendors = d.vendors; persist(); renderAll();
+      $("dataMsg").innerHTML = `<div class="msg ok">${esc(t("restored"))}</div>`;
+    };
+  };
+
+  // =====================================================================
+  // Product list
+  // =====================================================================
+  let filter = "all";
+  function renderItems() {
+    const vlist = Object.values(vendors).sort((a, b) => Number(a.num) - Number(b.num));
+    $("filters").innerHTML = [`<button class="btn small" data-f="all" aria-pressed="${filter === "all"}">${esc(t("all"))}</button>`]
+      .concat(vlist.map((v) => `<button class="btn small" data-f="${esc(v.num)}" aria-pressed="${filter === v.num}">${esc(v.num)}</button>`)).join("");
+    $("filters").querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { filter = b.dataset.f; renderItems(); }));
+    const list = Object.values(products).filter((p) => filter === "all" || p.vendor === filter).sort(byVendorThenName);
+    if (!list.length) {
+      $("itemsOut").innerHTML = `<div class="empty"><strong>${esc(t("emptyItemsT"))}</strong><span>${esc(t("emptyItemsS"))}</span></div>`;
+      return;
+    }
+    $("itemsOut").innerHTML = `<p class="hint">${esc(t("count", list.length))}</p>` + list.map((p) => `
+      <div class="item"><span class="name">${esc(p.name)}</span><span class="sub"><span class="mono">${esc(p.barcode)}</span> ・ ${vendorChip(p.vendor)}</span>
+      <span class="qty" style="display:grid;gap:6px;justify-items:end"><span>${p.qty ? "×" + p.qty : ""}</span>
+      <span class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-edit="${esc(p.barcode)}">${esc(t("open"))}</button><button class="btn small danger" data-del="${esc(p.barcode)}">${esc(t("del"))}</button></span></span></div>`).join("");
+    $("itemsOut").querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => { current = b.dataset.edit; switchTab("scan"); renderScan(false); }));
+    $("itemsOut").querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => {
+      if (b.dataset.armed) delProduct(b.dataset.del);
+      else { b.dataset.armed = "1"; b.textContent = t("reallyDel"); setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = t("del"); } }, 3000); }
+    }));
+  }
+
+  // =====================================================================
+  // Vendors
+  // =====================================================================
+  function renderVendors() {
+    const vlist = Object.values(vendors).sort((a, b) => Number(a.num) - Number(b.num));
+    const counts = {}; Object.values(products).forEach((p) => (counts[p.vendor] = (counts[p.vendor] || 0) + 1));
+    $("vendorsOut").innerHTML = vlist.length ? vlist.map((v) => `
+      <div class="card" style="--vc:var(${VCOL[(v.color ?? 0) % 5]})">
+        <div class="vrow"><div class="sw"></div>
+          <input type="text" class="mono" value="${esc(v.num)}" disabled aria-label="${esc(t("numAria"))}">
+          <input type="text" id="vn-${esc(v.num)}" value="${esc(v.name)}" aria-label="${esc(t("nameAria"))}">
+        </div>
+        <div class="row" style="justify-content:space-between"><span class="hint">${esc(t("productsN", counts[v.num] || 0))}</span>
+          <span class="row" style="gap:6px"><button class="btn small" data-vsave="${esc(v.num)}">${esc(t("saveName"))}</button>
+          <button class="btn small danger" data-vdel="${esc(v.num)}" ${counts[v.num] ? `disabled title="${esc(t("itemsLeft"))}"` : ""}>${esc(t("del"))}</button></span></div>
+      </div>`).join("") : `<div class="card empty"><strong>${esc(t("noVendorsT"))}</strong><span>${esc(t("noVendorsS"))}</span></div>`;
+    $("vendorsOut").querySelectorAll("[data-vsave]").forEach((b) => (b.onclick = () => {
+      const v = vendors[b.dataset.vsave]; const name = $("vn-" + b.dataset.vsave).value.trim();
+      if (name) setVendor({ ...v, name });
+    }));
+    $("vendorsOut").querySelectorAll("[data-vdel]").forEach((b) => (b.onclick = () => {
+      if (b.dataset.armed) delVendor(b.dataset.vdel);
+      else { b.dataset.armed = "1"; b.textContent = t("reallyDel"); }
+    }));
+  }
+  $("addVendor").onclick = () => {
+    const num = $("newVnum").value.trim(), name = $("newVname").value.trim();
+    if (!/^\d{1,6}$/.test(num) || !name) { $("vendorMsg").innerHTML = `<div class="msg err">${esc(t("vendorBad"))}</div>`; return; }
+    if (vendors[num]) { $("vendorMsg").innerHTML = `<div class="msg err">${esc(t("vendorDup", num))}</div>`; return; }
+    const used = Object.values(vendors).map((v) => v.color ?? 0);
+    let color = used.length % 5; for (let i = 0; i < 5; i++) if (!used.includes(i)) { color = i; break; }
+    setVendor({ num, name, color });
+    $("newVnum").value = ""; $("newVname").value = ""; $("vendorMsg").innerHTML = "";
+  };
+
+  // =====================================================================
+  // Tabs / wiring
+  // =====================================================================
+  function switchTab(name) {
+    document.querySelectorAll("nav.tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+    ["scan", "order", "items", "vendors"].forEach((tb) => ($("tab-" + tb).hidden = tb !== name));
+    if (name !== "scan" && stream) stopCamera(true);           // save battery while on other tabs
+    if (name === "scan" && wantCamera && !stream) startCamera();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll("nav.tabs button").forEach((b) => (b.onclick = () => switchTab(b.dataset.tab)));
+  $("photo").onchange = (e) => { handlePhoto(e.target.files[0]); e.target.value = ""; };
+  $("manualGo").onclick = () => { const v = $("manual").value.replace(/\D/g, ""); if (v) showCode(v); };
+  $("manual").onkeydown = (e) => { if (e.key === "Enter") $("manualGo").click(); };
+
+  function renderAll() { renderOrders(); renderItems(); renderVendors(); }
+  load();
+  applyStatic();
+  renderAll();
+})();
+</script>
+</body>
+</html>
